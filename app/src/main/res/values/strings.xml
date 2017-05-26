@@ -1,7 +1,15 @@
 <resources>
     <string name="app_name">Encrypted Notepad</string>
+    <string name="dialog_password_decrypt">Enter password:</string>
+    <string name="dialog_password_encrypt">Enter password to encrypt the file:</string>
+    <string name="dialog_save_discard">Save changes?</string>
+    <string name="menu_item_new">New</string>
     <string name="menu_item_open">Open…</string>
     <string name="menu_item_save">Save</string>
     <string name="menu_item_save_as">Save As…</string>
-    <string name="menu_item_new">New</string>
+    <string name="mime_type_app">application/*</string>
+    <string name="option_discard">Discard</string>
+    <string name="option_save">Save</string>
+    <string name="title_new_note">New Note</string>
+    <string name="warn_password_invalid">Password is not valid</string>
 </resources>

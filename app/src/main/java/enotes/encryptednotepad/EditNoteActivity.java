@@ -9,7 +9,9 @@ import android.os.Bundle;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -40,6 +42,25 @@ public class EditNoteActivity extends AppCompatActivity {
         setSupportActionBar(toolbar);
 
         editText = (EditText) findViewById(R.id.editText);
+        editText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+
+            }
+
+            @Override
+            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
+
+            }
+
+            @Override
+            public void afterTextChanged(Editable editable) {
+                if (!docMeta.modified) {
+                    docMeta.modified = true;
+                    updateTitle();
+                }
+            }
+        });
         docMeta = new DocMetadata();
 
         Intent intent = getIntent();
@@ -61,11 +82,25 @@ public class EditNoteActivity extends AppCompatActivity {
         int id = item.getItemId();
         switch (id) {
             case R.id.action_new:
-                docMeta = new DocMetadata();
-                editText.getText().clear();
+                checkSaveAnd(new Action<Object>() {
+                    @Override
+                    public boolean execute(Object arg) {
+                        docMeta = new DocMetadata();
+                        editText.getText().clear();
+                        docMeta.modified = false;
+                        updateTitle();
+                        return true;
+                    }
+                });
                 return true;
             case R.id.action_open:
-                chooseDocument();
+                checkSaveAnd(new Action<Object>() {
+                    @Override
+                    public boolean execute(Object arg) {
+                        chooseDocument();
+                        return true;
+                    }
+                });
                 return true;
             case R.id.action_save:
                 saveDocument();
@@ -80,7 +115,7 @@ public class EditNoteActivity extends AppCompatActivity {
     private void chooseDocument() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("application/*");
+        intent.setType(getString(R.string.mime_type_app));
         startActivityForResult(intent, ID_OPEN_NOTE);
     }
 
@@ -94,13 +129,13 @@ public class EditNoteActivity extends AppCompatActivity {
     }
 
     private void createDocument() {
-        withPassword("Enter password to encrypt the file:", new Action<String>() {
+        withPassword(getString(R.string.dialog_password_encrypt), new Action<String>() {
             @Override
             public boolean execute(String pwd) {
                 docMeta.setKey(pwd);
                 Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
-                intent.setType("application/*");
+                intent.setType(getString(R.string.mime_type_app));
                 startActivityForResult(intent, ID_CREATE_NOTE);
                 return true;
             }
@@ -126,7 +161,7 @@ public class EditNoteActivity extends AppCompatActivity {
     }
 
     private void openNote(final Uri uri) {
-        withPassword("Enter password:", new Action<String>() {
+        withPassword(getString(R.string.dialog_password_decrypt), new Action<String>() {
             @Override
             public boolean execute(String pwd) {
                 try (InputStream inputStream = getContentResolver().openInputStream(uri)) {
@@ -134,10 +169,12 @@ public class EditNoteActivity extends AppCompatActivity {
                     docMeta = doc.getDocMetadata();
                     docMeta.filename = uri.toString();
                     editText.setText(doc.getText());
+                    docMeta.modified = false;
+                    updateTitle();
                     return true;
                 } catch (DocPasswordException ignored) {
                     // TODO: ask again?
-                    Snackbar.make(editText, "Password is not valid", Snackbar.LENGTH_LONG)
+                    Snackbar.make(editText, R.string.warn_password_invalid, Snackbar.LENGTH_LONG)
                             .setAction(android.R.string.ok, null).show();
                     return false;
                 } catch (IOException | DocException e) {
@@ -148,6 +185,19 @@ public class EditNoteActivity extends AppCompatActivity {
                 }
             }
         });
+    }
+
+    private void saveNote(Doc doc) {
+        try {
+            OutputStream out = this.getContentResolver().openOutputStream(Uri.parse(doc.getDocMetadata().filename));
+            doc.save(out);
+            docMeta.modified = false;
+            updateTitle();
+        } catch (IOException | DocPasswordException e) {
+            Snackbar.make(editText, e.getMessage(), Snackbar.LENGTH_LONG)
+                    .setAction(android.R.string.ok, null).show();
+            Log.e(TAG, e.getMessage(), e);
+        }
     }
 
     private void withPassword(String message, final Action<String> action) {
@@ -170,21 +220,51 @@ public class EditNoteActivity extends AppCompatActivity {
         pwDialog.show();
     }
 
-    private void saveNote(Doc doc) {
-        try {
-            OutputStream out = this.getContentResolver().openOutputStream(Uri.parse(doc.getDocMetadata().filename));
-            doc.save(out);
-            System.out.println(out);
-        } catch (IOException | DocPasswordException e) {
-            Snackbar.make(editText, e.getMessage(), Snackbar.LENGTH_LONG)
-                    .setAction(android.R.string.ok, null).show();
-            Log.e(TAG, e.getMessage(), e);
+    private void checkSaveAnd(final Action<Object> action) {
+        if (docMeta.modified) {
+            new AlertDialog.Builder(this)
+                    .setTitle(getString(R.string.dialog_save_discard))
+                    .setCancelable(true)
+                    .setPositiveButton(getString(R.string.option_save), new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int i) {
+                            saveDocument();
+                        }
+                    })
+                    .setNegativeButton(getString(R.string.option_discard), new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialogInterface, int i) {
+                            action.execute(null);
+                        }
+                    })
+                    .show();
+        } else {
+            action.execute(null);
         }
     }
 
     private interface Action<T> {
         boolean execute(T arg);
     }
+
+    private void updateTitle() {
+        String fn;
+        if (docMeta.filename == null) {
+            fn = getString(R.string.title_new_note);
+        } else {
+            String pathSegment = Uri.parse(docMeta.filename).getLastPathSegment();
+            int i = pathSegment.indexOf(':');
+            if (i >= 0) {
+                pathSegment = pathSegment.substring(i + 1);
+            }
+            fn = pathSegment;
+        }
+        if (docMeta.modified) {
+            fn += "*";
+        }
+        this.setTitle(fn);
+    }
+
 /*    private SparseArray<Action> permissionRequests = new SparseArray<>();
     public void withPermission(String permission, String message, Action action) {
         if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
