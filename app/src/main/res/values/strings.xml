@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">Encrypted Notepad</string>
-    <string name="menu_item_open">Open</string>
+    <string name="menu_item_open">Open…</string>
     <string name="menu_item_save">Save</string>
+    <string name="menu_item_save_as">Save As…</string>
+    <string name="menu_item_new">New</string>
 </resources>
