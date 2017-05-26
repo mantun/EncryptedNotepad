@@ -1,5 +1,6 @@
 package enotes.encryptednotepad;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
@@ -9,17 +10,18 @@ import android.os.Bundle;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.text.Editable;
-import android.text.InputType;
-import android.text.TextWatcher;
+import android.text.*;
+import android.text.style.BackgroundColorSpan;
 import android.util.Log;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.EditText;
-import enotes.doc.Doc;
-import enotes.doc.DocException;
-import enotes.doc.DocMetadata;
-import enotes.doc.DocPasswordException;
+import android.widget.ScrollView;
+import android.widget.SearchView;
+import android.widget.TextView;
+import enotes.doc.*;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,7 +34,11 @@ public class EditNoteActivity extends AppCompatActivity {
     private static final int ID_CREATE_NOTE = 1873;
 
     private EditText editText;
+    private ScrollView scrollView;
     private DocMetadata docMeta;
+    private int colorPrimary;
+    private int colorAccent;
+    private SearchHighlighter highlighter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -41,17 +47,33 @@ public class EditNoteActivity extends AppCompatActivity {
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
+        // search-related
+        final TypedValue value = new TypedValue();
+        getTheme().resolveAttribute(R.attr.colorAccent, value, true);
+        colorAccent = value.data;
+        getTheme().resolveAttribute(R.attr.colorPrimary, value, true);
+        colorPrimary = value.data;
+        highlighter = new SearchHighlighter();
+        scrollView = (ScrollView) findViewById(R.id.scrollView);
+        SearchView searchView = (SearchView) findViewById(R.id.searchView);
+        searchView.setLayoutParams(new Toolbar.LayoutParams(Gravity.END));
+        searchView.setOnCloseListener(new SearchView.OnCloseListener() {
+            @Override
+            public boolean onClose() {
+                highlighter.clearHighlights();
+                return false;
+            }
+        });
+        searchView.setOnQueryTextListener(new SearchTextListener());
+
+        // edit text
         editText = (EditText) findViewById(R.id.editText);
         editText.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-
-            }
+            public void beforeTextChanged(CharSequence charSequence, int start, int count, int after) { }
 
             @Override
-            public void onTextChanged(CharSequence charSequence, int i, int i1, int i2) {
-
-            }
+            public void onTextChanged(CharSequence charSequence, int start, int count, int after) { }
 
             @Override
             public void afterTextChanged(Editable editable) {
@@ -61,8 +83,12 @@ public class EditNoteActivity extends AppCompatActivity {
                 }
             }
         });
-        docMeta = new DocMetadata();
 
+        // more init
+        docMeta = new DocMetadata();
+        updateTitle();
+
+        // check if launched with intent
         Intent intent = getIntent();
         if (intent != null && intent.getAction().equals(Intent.ACTION_VIEW)) {
             openNote(intent.getData());
@@ -87,6 +113,7 @@ public class EditNoteActivity extends AppCompatActivity {
                     public boolean execute(Object arg) {
                         docMeta = new DocMetadata();
                         editText.getText().clear();
+                        editText.getText().clearSpans();
                         docMeta.modified = false;
                         updateTitle();
                         return true;
@@ -168,7 +195,7 @@ public class EditNoteActivity extends AppCompatActivity {
                     Doc doc = Doc.open(inputStream, pwd);
                     docMeta = doc.getDocMetadata();
                     docMeta.filename = uri.toString();
-                    editText.setText(doc.getText());
+                    editText.setText(doc.getText(), TextView.BufferType.SPANNABLE);
                     docMeta.modified = false;
                     updateTitle();
                     return true;
@@ -264,6 +291,86 @@ public class EditNoteActivity extends AppCompatActivity {
         }
         this.setTitle(fn);
     }
+
+    public class SearchHighlighter implements Searcher.Highlighter {
+        @Override
+        public void clearHighlights() {
+            for (SearchHighlightSpan span : editText.getText().getSpans(0, editText.getText().length(), SearchHighlightSpan.class)) {
+                editText.getText().removeSpan(span);
+            }
+        }
+
+        @Override
+        public void addHighlight(int start, int end, boolean isCurrent) {
+            editText.getText().setSpan(new SearchHighlightSpan(isCurrent ? colorAccent : colorPrimary),
+                    start, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+    }
+
+    private class SearchTextListener implements SearchView.OnQueryTextListener {
+        private Searcher searcher;
+        @Override
+        public boolean onQueryTextSubmit(final String findText) {
+            if (searcher != null && !findText.equalsIgnoreCase(searcher.getWord())) {
+                highlighter.clearHighlights();
+                searcher = null;
+            }
+            if (findText.isEmpty()) {
+                return false;
+            }
+            find(findText);
+            return true;
+        }
+
+        private void find(String findText) {
+            if (searcher == null) {
+                searcher = new Searcher(findText.toLowerCase(), editText.getText().toString().toLowerCase(),
+                        editText.getSelectionStart(), highlighter);
+            }
+            final int found = searcher.findNext();
+            if (found == -1) {
+                Snackbar.make(editText, "Not found: " + findText, Snackbar.LENGTH_LONG)
+                        .setAction(android.R.string.ok, null).show();
+            } else {
+                scrollTo(found);
+            }
+        }
+
+        @Override
+        public boolean onQueryTextChange(String findText) {
+            if (searcher != null) {
+                highlighter.clearHighlights();
+                searcher = null;
+            }
+            if (findText.length() < 2) {
+                return false;
+            }
+            find(findText);
+            return true;
+        }
+
+        private void scrollTo(int found) {
+            //editText.setSelection(found);
+            Layout layout = editText.getLayout();
+            int line = layout.getLineForOffset(found);
+            int baseline = layout.getLineBaseline(line);
+            int ascent = layout.getLineAscent(line);
+            int y = baseline + ascent;
+            scrollView.smoothScrollTo(0, y);
+            editText.invalidate();
+        }
+    }
+
+    /**
+     * Custom class to allow span filtering by class type - we shouldn't remove all spans, only ours
+     */
+    @SuppressLint("ParcelCreator")
+    private static class SearchHighlightSpan extends BackgroundColorSpan {
+        SearchHighlightSpan(int color) {
+            super(color);
+        }
+    }
+
 
 /*    private SparseArray<Action> permissionRequests = new SparseArray<>();
     public void withPermission(String permission, String message, Action action) {
