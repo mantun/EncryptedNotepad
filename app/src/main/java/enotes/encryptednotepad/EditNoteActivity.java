@@ -46,6 +46,7 @@ public class EditNoteActivity extends AppCompatActivity {
     private int colorPrimary;
     private int colorAccent;
     private SearchHighlighter highlighter;
+    private long pauseTime;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -95,6 +96,7 @@ public class EditNoteActivity extends AppCompatActivity {
         // more init
         docMeta = new DocMetadata();
         updateTitle();
+        pauseTime = System.currentTimeMillis();
 
         // check if launched with intent
         Intent intent = getIntent();
@@ -121,7 +123,7 @@ public class EditNoteActivity extends AppCompatActivity {
                     public boolean execute(Object arg) {
                         docMeta = new DocMetadata();
                         editText.getText().clear();
-                        editText.getText().clearSpans();
+                        highlighter.clearHighlights();
                         docMeta.modified = false;
                         updateTitle();
                         return true;
@@ -167,6 +169,23 @@ public class EditNoteActivity extends AppCompatActivity {
             docMeta.filename = savedInstanceState.getString(META_FILENAME);
             docMeta.key = savedInstanceState.getByteArray(META_KEY);
             updateTitle();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        pauseTime = System.currentTimeMillis();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (System.currentTimeMillis() - pauseTime > RESTORE_TIMEOUT && docMeta.filename != null) {
+            editText.getText().clear();
+            highlighter.clearHighlights();
+            docMeta.key = null;
+            openNote(Uri.parse(docMeta.filename));
         }
     }
 
