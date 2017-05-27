@@ -17,6 +17,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.WindowManager;
 import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.SearchView;
@@ -32,6 +33,12 @@ public class EditNoteActivity extends AppCompatActivity {
     private static final String TAG = "ENOTES";
     private static final int ID_OPEN_NOTE = 1872;
     private static final int ID_CREATE_NOTE = 1873;
+    private static final String META_MODIFIED = "META_MODIFIED";
+    private static final String META_POSITION = "META_POSITION";
+    private static final String META_FILENAME = "META_FILENAME";
+    private static final String META_KEY = "META_KEY";
+    private static final String SAVE_TIME = "SAVE_TIME";
+    private static final int RESTORE_TIMEOUT = 5 * 60 * 1000;
 
     private EditText editText;
     private ScrollView scrollView;
@@ -46,6 +53,7 @@ public class EditNoteActivity extends AppCompatActivity {
         setContentView(R.layout.activity_edit_note);
         Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
 
         // search-related
         final TypedValue value = new TypedValue();
@@ -92,7 +100,7 @@ public class EditNoteActivity extends AppCompatActivity {
         Intent intent = getIntent();
         if (intent != null && intent.getAction().equals(Intent.ACTION_VIEW)) {
             openNote(intent.getData());
-        } else if (savedInstanceState == null) {
+        } else if (savedInstanceState == null || System.currentTimeMillis() - savedInstanceState.getLong(SAVE_TIME) > RESTORE_TIMEOUT) {
             chooseDocument();
         }
     }
@@ -137,6 +145,29 @@ public class EditNoteActivity extends AppCompatActivity {
                 return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putLong(SAVE_TIME, System.currentTimeMillis());
+        outState.putBoolean(META_MODIFIED, docMeta.modified);
+        outState.putInt(META_POSITION, docMeta.caretPosition);
+        outState.putString(META_FILENAME, docMeta.filename);
+        outState.putByteArray(META_KEY, docMeta.key);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState) {
+        long time = savedInstanceState.getLong(SAVE_TIME);
+        if (System.currentTimeMillis() - time <= RESTORE_TIMEOUT) {
+            super.onRestoreInstanceState(savedInstanceState);
+            docMeta.modified = savedInstanceState.getBoolean(META_MODIFIED);
+            docMeta.caretPosition = savedInstanceState.getInt(META_POSITION);
+            docMeta.filename = savedInstanceState.getString(META_FILENAME);
+            docMeta.key = savedInstanceState.getByteArray(META_KEY);
+            updateTitle();
+        }
     }
 
     private void chooseDocument() {
