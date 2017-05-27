@@ -92,7 +92,7 @@ public class EditNoteActivity extends AppCompatActivity {
         Intent intent = getIntent();
         if (intent != null && intent.getAction().equals(Intent.ACTION_VIEW)) {
             openNote(intent.getData());
-        } else {
+        } else if (savedInstanceState == null) {
             chooseDocument();
         }
     }
@@ -196,6 +196,7 @@ public class EditNoteActivity extends AppCompatActivity {
                     docMeta = doc.getDocMetadata();
                     docMeta.filename = uri.toString();
                     editText.setText(doc.getText(), TextView.BufferType.SPANNABLE);
+                    scrollTo(docMeta.caretPosition);
                     docMeta.modified = false;
                     updateTitle();
                     return true;
@@ -217,6 +218,7 @@ public class EditNoteActivity extends AppCompatActivity {
     private void saveNote(Doc doc) {
         try {
             OutputStream out = this.getContentResolver().openOutputStream(Uri.parse(doc.getDocMetadata().filename));
+            doc.getDocMetadata().caretPosition = editText.getSelectionStart();
             doc.save(out);
             docMeta.modified = false;
             updateTitle();
@@ -349,16 +351,16 @@ public class EditNoteActivity extends AppCompatActivity {
             return true;
         }
 
-        private void scrollTo(int found) {
-            //editText.setSelection(found);
-            Layout layout = editText.getLayout();
-            int line = layout.getLineForOffset(found);
-            int baseline = layout.getLineBaseline(line);
-            int ascent = layout.getLineAscent(line);
-            int y = baseline + ascent;
-            scrollView.smoothScrollTo(0, y);
-            editText.invalidate();
-        }
+    }
+
+    private void scrollTo(int index) {
+        editText.setSelection(index);
+        Layout layout = editText.getLayout();
+        int line = layout.getLineForOffset(index);
+        int baseline = layout.getLineBaseline(line);
+        int ascent = layout.getLineAscent(line);
+        int y = baseline + ascent;
+        scrollView.smoothScrollTo(0, y);
     }
 
     /**
