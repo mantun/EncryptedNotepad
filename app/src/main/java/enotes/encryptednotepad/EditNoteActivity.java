@@ -5,8 +5,10 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
@@ -38,13 +40,13 @@ public class EditNoteActivity extends AppCompatActivity {
     private static final String META_FILENAME = "META_FILENAME";
     private static final String META_KEY = "META_KEY";
     private static final String SAVE_TIME = "SAVE_TIME";
+    private static final String DISPLAY_NAME = "DISPLAY_NAME";
     private static final int RESTORE_TIMEOUT = 5 * 60 * 1000;
 
     private EditText editText;
     private ScrollView scrollView;
+
     private DocMetadata docMeta;
-    private int colorPrimary;
-    private int colorAccent;
     private SearchHighlighter highlighter;
     private long pauseTime;
 
@@ -59,10 +61,10 @@ public class EditNoteActivity extends AppCompatActivity {
         // search-related
         final TypedValue value = new TypedValue();
         getTheme().resolveAttribute(R.attr.colorAccent, value, true);
-        colorAccent = value.data;
+        int colorAccent = value.data;
         getTheme().resolveAttribute(R.attr.colorPrimary, value, true);
-        colorPrimary = value.data;
-        highlighter = new SearchHighlighter();
+        int colorPrimary = value.data;
+        highlighter = new SearchHighlighter(colorPrimary, colorAccent);
         scrollView = (ScrollView) findViewById(R.id.scrollView);
         SearchView searchView = (SearchView) findViewById(R.id.searchView);
         searchView.setLayoutParams(new Toolbar.LayoutParams(Gravity.END));
@@ -157,6 +159,7 @@ public class EditNoteActivity extends AppCompatActivity {
         outState.putInt(META_POSITION, docMeta.caretPosition);
         outState.putString(META_FILENAME, docMeta.filename);
         outState.putByteArray(META_KEY, docMeta.key);
+        outState.putString(DISPLAY_NAME, docMeta.displayName);
     }
 
     @Override
@@ -168,6 +171,7 @@ public class EditNoteActivity extends AppCompatActivity {
             docMeta.caretPosition = savedInstanceState.getInt(META_POSITION);
             docMeta.filename = savedInstanceState.getString(META_FILENAME);
             docMeta.key = savedInstanceState.getByteArray(META_KEY);
+            docMeta.displayName = savedInstanceState.getString(DISPLAY_NAME);
             updateTitle();
         }
     }
@@ -184,8 +188,10 @@ public class EditNoteActivity extends AppCompatActivity {
         if (System.currentTimeMillis() - pauseTime > RESTORE_TIMEOUT && docMeta.filename != null) {
             editText.getText().clear();
             highlighter.clearHighlights();
-            docMeta.key = null;
-            openNote(Uri.parse(docMeta.filename));
+            Uri uri = Uri.parse(docMeta.filename);
+            docMeta.key = null; 
+            docMeta.filename = null;
+            openNote(uri);
         }
     }
 
@@ -230,6 +236,7 @@ public class EditNoteActivity extends AppCompatActivity {
             if (data != null) {
                 Uri uri = data.getData();
                 docMeta.filename = uri.toString();
+                docMeta.displayName = getDisplayName(uri);
                 Doc doc = new Doc(editText.getText().toString(), docMeta);
                 saveNote(doc);
             }
@@ -238,13 +245,15 @@ public class EditNoteActivity extends AppCompatActivity {
     }
 
     private void openNote(final Uri uri) {
-        withPassword(getString(R.string.dialog_password_decrypt), new Action<String>() {
+        final String displayName = getDisplayName(uri);
+        withPassword(getString(R.string.dialog_password_decrypt, displayName), new Action<String>() {
             @Override
             public boolean execute(String pwd) {
                 try (InputStream inputStream = getContentResolver().openInputStream(uri)) {
                     Doc doc = Doc.open(inputStream, pwd);
                     docMeta = doc.getDocMetadata();
                     docMeta.filename = uri.toString();
+                    docMeta.displayName = displayName;
                     editText.setText(doc.getText(), TextView.BufferType.SPANNABLE);
                     scrollTo(docMeta.caretPosition);
                     docMeta.modified = false;
@@ -263,6 +272,19 @@ public class EditNoteActivity extends AppCompatActivity {
                 }
             }
         });
+    }
+
+    private String getDisplayName(Uri uri) {
+        Cursor cursor = getContentResolver().query(uri, null, null, null, null, null);
+        if (cursor != null) {
+            try {
+                cursor.moveToFirst();
+                return cursor.getString(cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME));
+            } finally {
+                cursor.close();
+            }
+        }
+        return "";
     }
 
     private void saveNote(Doc doc) {
@@ -331,12 +353,7 @@ public class EditNoteActivity extends AppCompatActivity {
         if (docMeta.filename == null) {
             fn = getString(R.string.title_new_note);
         } else {
-            String pathSegment = Uri.parse(docMeta.filename).getLastPathSegment();
-            int i = pathSegment.indexOf(':');
-            if (i >= 0) {
-                pathSegment = pathSegment.substring(i + 1);
-            }
-            fn = pathSegment;
+            fn = docMeta.displayName;
         }
         if (docMeta.modified) {
             fn += "*";
@@ -345,6 +362,14 @@ public class EditNoteActivity extends AppCompatActivity {
     }
 
     public class SearchHighlighter implements Searcher.Highlighter {
+        private int colorPrimary;
+        private int colorAccent;
+
+        SearchHighlighter(int colorPrimary, int colorAccent) {
+            this.colorPrimary = colorPrimary;
+            this.colorAccent = colorAccent;
+        }
+
         @Override
         public void clearHighlights() {
             for (SearchHighlightSpan span : editText.getText().getSpans(0, editText.getText().length(), SearchHighlightSpan.class)) {
