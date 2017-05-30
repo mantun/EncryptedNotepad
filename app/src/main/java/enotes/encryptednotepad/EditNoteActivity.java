@@ -186,11 +186,14 @@ public class EditNoteActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         if (System.currentTimeMillis() - pauseTime > RESTORE_TIMEOUT && docMeta.filename != null) {
-            editText.getText().clear();
+            // ask for password again (clear editText so we don't see behind the password dialog)
+            editText.getText().clear(); // TODO: this discards changes - either save automatically or keep the unsaved state somehow
             highlighter.clearHighlights();
             Uri uri = Uri.parse(docMeta.filename);
             docMeta.key = null; 
             docMeta.filename = null;
+            docMeta.modified = false;
+            updateTitle();
             openNote(uri);
         }
     }
