@@ -12,7 +12,11 @@ import android.provider.OpenableColumns;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.text.*;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.Layout;
+import android.text.Spannable;
+import android.text.TextWatcher;
 import android.text.style.BackgroundColorSpan;
 import android.util.Log;
 import android.util.TypedValue;
@@ -24,11 +28,16 @@ import android.widget.EditText;
 import android.widget.ScrollView;
 import android.widget.SearchView;
 import android.widget.TextView;
-import enotes.doc.*;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+
+import enotes.doc.Doc;
+import enotes.doc.DocException;
+import enotes.doc.DocMetadata;
+import enotes.doc.DocPasswordException;
+import enotes.doc.Searcher;
 
 public class EditNoteActivity extends AppCompatActivity {
 
@@ -257,6 +266,7 @@ public class EditNoteActivity extends AppCompatActivity {
                     docMeta = doc.getDocMetadata();
                     docMeta.filename = uri.toString();
                     docMeta.displayName = displayName;
+                    highlighter.clearHighlights();
                     editText.setText(doc.getText(), TextView.BufferType.SPANNABLE);
                     scrollTo(docMeta.caretPosition);
                     docMeta.modified = false;
