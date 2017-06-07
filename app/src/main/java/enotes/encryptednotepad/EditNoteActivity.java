@@ -112,7 +112,7 @@ public class EditNoteActivity extends AppCompatActivity {
         // check if launched with intent
         Intent intent = getIntent();
         if (intent != null && intent.getAction().equals(Intent.ACTION_VIEW)) {
-            openNote(intent.getData());
+            openNote(intent.getData(), initUIFromDoc(intent.getData()));
         } else if (savedInstanceState == null || System.currentTimeMillis() - savedInstanceState.getLong(SAVE_TIME) > RESTORE_TIMEOUT) {
             chooseDocument();
         }
@@ -132,11 +132,7 @@ public class EditNoteActivity extends AppCompatActivity {
                 checkSaveAnd(new Action<Object>() {
                     @Override
                     public boolean execute(Object arg) {
-                        docMeta = new DocMetadata();
-                        editText.getText().clear();
-                        highlighter.clearHighlights();
-                        docMeta.modified = false;
-                        updateTitle();
+                        newNote();
                         return true;
                     }
                 });
@@ -158,6 +154,14 @@ public class EditNoteActivity extends AppCompatActivity {
                 return true;
         }
         return super.onOptionsItemSelected(item);
+    }
+
+    private void newNote() {
+        docMeta = new DocMetadata();
+        editText.getText().clear();
+        highlighter.clearHighlights();
+        docMeta.modified = false;
+        updateTitle();
     }
 
     @Override
@@ -196,14 +200,19 @@ public class EditNoteActivity extends AppCompatActivity {
         super.onResume();
         if (System.currentTimeMillis() - pauseTime > RESTORE_TIMEOUT && docMeta.filename != null) {
             // ask for password again (clear editText so we don't see behind the password dialog)
-            editText.getText().clear(); // TODO: this discards changes - either save automatically or keep the unsaved state somehow
-            highlighter.clearHighlights();
-            Uri uri = Uri.parse(docMeta.filename);
-            docMeta.key = null; 
-            docMeta.filename = null;
-            docMeta.modified = false;
-            updateTitle();
-            openNote(uri);
+            final String currentText = editText.getText().toString();
+            final DocMetadata currentMeta = docMeta;
+            newNote(); // init blank UI and meta (modified text is lost if you
+            Uri uri = Uri.parse(currentMeta.filename);
+            openNote(uri, new Action<Doc>() {
+                @Override
+                public boolean execute(Doc doc) {
+                    editText.setText(currentText); // restore text and meta
+                    docMeta = currentMeta;
+                    updateTitle();
+                    return true;
+                }
+            });
         }
     }
 
@@ -242,7 +251,7 @@ public class EditNoteActivity extends AppCompatActivity {
         if (requestCode == ID_OPEN_NOTE && resultCode == Activity.RESULT_OK) {
             if (data != null) {
                 Uri uri = data.getData();
-                openNote(uri);
+                openNote(uri, initUIFromDoc(uri));
             }
         } else if (requestCode == ID_CREATE_NOTE && resultCode == Activity.RESULT_OK) {
             if (data != null) {
@@ -256,26 +265,19 @@ public class EditNoteActivity extends AppCompatActivity {
         super.onActivityResult(requestCode, resultCode, data);
     }
 
-    private void openNote(final Uri uri) {
+    private void openNote(final Uri uri, final Action initUIAction) {
         final String displayName = getDisplayName(uri);
         withPassword(getString(R.string.dialog_password_decrypt, displayName), new Action<String>() {
             @Override
             public boolean execute(String pwd) {
                 try (InputStream inputStream = getContentResolver().openInputStream(uri)) {
                     Doc doc = Doc.open(inputStream, pwd);
-                    docMeta = doc.getDocMetadata();
-                    docMeta.filename = uri.toString();
-                    docMeta.displayName = displayName;
-                    highlighter.clearHighlights();
-                    editText.setText(doc.getText(), TextView.BufferType.SPANNABLE);
-                    scrollTo(docMeta.caretPosition);
-                    docMeta.modified = false;
-                    updateTitle();
+                    initUIAction.execute(doc);
                     return true;
                 } catch (DocPasswordException ignored) {
-                    // TODO: ask again?
                     Snackbar.make(editText, R.string.warn_password_invalid, Snackbar.LENGTH_LONG)
                             .setAction(android.R.string.ok, null).show();
+                    openNote(uri, initUIAction);
                     return false;
                 } catch (IOException | DocException e) {
                     Snackbar.make(editText, e.getMessage(), Snackbar.LENGTH_LONG)
@@ -285,6 +287,23 @@ public class EditNoteActivity extends AppCompatActivity {
                 }
             }
         });
+    }
+
+    private Action initUIFromDoc(final Uri uri) {
+        return new Action<Doc>() {
+            @Override
+            public boolean execute(Doc doc) {
+                docMeta = doc.getDocMetadata();
+                docMeta.filename = uri.toString();
+                docMeta.displayName = getDisplayName(uri);
+                highlighter.clearHighlights();
+                editText.setText(doc.getText(), TextView.BufferType.SPANNABLE);
+                scrollTo(docMeta.caretPosition);
+                docMeta.modified = false;
+                updateTitle();
+                return false;
+            }
+        };
     }
 
     private String getDisplayName(Uri uri) {
