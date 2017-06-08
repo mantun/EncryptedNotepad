@@ -436,7 +436,10 @@ public class EditNoteActivity extends AppCompatActivity {
                 searcher = new Searcher(findText.toLowerCase(), editText.getText().toString().toLowerCase(),
                         editText.getSelectionStart(), highlighter);
             }
-            final int found = searcher.findNext();
+            int found = searcher.findNext();
+            if (found == -1) {
+                found = searcher.findNext(); // try from beginning
+            }
             if (found == -1) {
                 Snackbar.make(editText, "Not found: " + findText, Snackbar.LENGTH_LONG)
                         .setAction(android.R.string.ok, null).show();
